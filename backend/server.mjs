@@ -68,7 +68,9 @@ app.get("/", (req, res) => {
   res.send("✅ Le serveur Bayt Al Khouyoul fonctionne parfaitement !");
 });
 
+// const PORT = 5000;
+// app.listen(PORT, () => console.log(`🚀 Serveur actif sur http://localhost:${PORT}`));
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Serveur actif sur port ${PORT}`));
-
