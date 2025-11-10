@@ -7,7 +7,7 @@ app.use(cors());
 app.use(express.json());
 
 // === CONFIG TRANSPORT EMAIL ===
-// ⚠️ بدل المعلومات ديالك هنا
+// ⚠️ يفضّل تدير هاد المعلومات فـ .env (باش تكون آمنة)
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -18,10 +18,10 @@ const transporter = nodemailer.createTransport({
 
 // === Route POST pour recevoir les réservations ===
 app.post("/api/reservation", async (req, res) => {
-  const data = req.body;
-  const { prenom, nom, personnes, email, telephone, date, message } = data;
+  const { prenom, nom, personnes, email, telephone, date, message } = req.body;
 
   try {
+    // Email vers l'administrateur
     await transporter.sendMail({
       from: `"Site Bayt Al Khouyoul" <${email}>`,
       to: "responsable@tondomaine.ma", // 📩 بريد الشخص المسؤول
@@ -37,15 +37,15 @@ app.post("/api/reservation", async (req, res) => {
       `,
     });
 
-    // Email vers le client
+    // Email de confirmation au client
     await transporter.sendMail({
-      from: `"Bayt Al Khouyoul" <tonemail@gmail.com>`,
+      from: `"Bayt Al Khouyoul" <mohammedchboubaig@gmail.com>`,
       to: email,
       subject: "Votre réservation a bien été reçue ✅",
       html: `
         <h2>Bonjour ${prenom},</h2>
         <p>Votre demande de réservation a bien été enregistrée.</p>
-        <p>Un membre de notre équipe vous contactera par téléphone pour confirmer les détails.</p>
+        <p>Un membre de notre équipe vous contactera bientôt.</p>
         <p>Merci pour votre confiance 🤎</p>
         <br/>
         <p>– L'équipe Bayt Al Khouyoul</p>
@@ -59,21 +59,12 @@ app.post("/api/reservation", async (req, res) => {
   }
 });
 
-// === Lancer le serveur ===
-// === Lancer le serveur ===
-// const PORT = 5000;
-// app.listen(PORT, () => console.log(`🚀 Serveur actif sur http://localhost:${PORT}`));
-
+// === Route GET principale pour tester ===
 app.get("/", (req, res) => {
   res.send("✅ Le serveur Bayt Al Khouyoul fonctionne parfaitement !");
 });
 
-// const PORT = 5000;
-// app.listen(PORT, () => console.log(`🚀 Serveur actif sur http://localhost:${PORT}`));
-
-app.get("/", (req, res) => {
-  res.send("✅ Le serveur Bayt Al Khouyoul fonctionne parfaitement !");
-});
-
+// === Lancer le serveur ===
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Serveur actif sur port ${PORT}`));
+
