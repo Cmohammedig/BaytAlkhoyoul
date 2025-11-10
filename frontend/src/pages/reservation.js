@@ -21,11 +21,22 @@ export default function Reservation() {
     e.preventDefault();
 
     try {
-      const res = await fetch("http://localhost:5000/api/reservation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
+      const res = await fetch(
+        "https://baytalkhoyoul.onrender.com/api/reservation", // ✅ رابط السيرفر على Render
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prenom: formData.firstName,
+            nom: formData.lastName,
+            personnes: formData.people,
+            email: formData.email,
+            telephone: formData.phone,
+            date: formData.date,
+            message: formData.message,
+          }),
+        }
+      );
 
       if (res.ok) {
         alert("✅ Your reservation request has been sent successfully!");
@@ -39,11 +50,12 @@ export default function Reservation() {
           message: "",
         });
       } else {
-        alert("❌ An error occurred. Please try again later.");
+        const error = await res.json();
+        alert(`❌ Server error: ${error.error || "please try again later"}`);
       }
     } catch (err) {
       console.error(err);
-      alert("⚠️ Unable to send the request (connection problem).");
+      alert("⚠️ Unable to send the request. Please check your internet connection.");
     }
   };
 
