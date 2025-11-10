@@ -60,5 +60,11 @@ app.post("/api/reservation", async (req, res) => {
 });
 
 // === Lancer le serveur ===
-const PORT = 5000;
-app.listen(PORT, () => console.log(`🚀 Serveur actif sur http://localhost:${PORT}`));
+// === Lancer le serveur ===
+// const PORT = 5000;
+// app.listen(PORT, () => console.log(`🚀 Serveur actif sur http://localhost:${PORT}`));
+
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`🚀 Serveur actif sur port ${PORT}`));
+
