@@ -1,247 +1,89 @@
-// Reservation.jsx
-import React, { useState } from "react";
-import "./reservation.css";
+// server.js (SendGrid)
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import sgMail from "@sendgrid/mail";
+import { body, validationResult } from "express-validator";
 
-/**
- * Reservation component (complete)
- * - Transparent overlay (Bayt Al Khouyoul message)
- * - Prevent double submit + Idempotency-Key header
- * - Accessible labels and aria-live
- * - Uses your API endpoint at https://baytalkhoyoul.onrender.com/api/reservation
- */
+const app = express();
+app.use(helmet());
+app.use(cors());
+app.use(express.json());
 
-export default function Reservation() {
-  const [formData, setFormData] = useState({
-    firstName: "",
-    lastName: "",
-    people: 1,
-    email: "",
-    phone: "",
-    date: "",
-    message: "",
-  });
+const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY || "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";
+const SENDGRID_FROM = process.env.SENDGRID_FROM || "mohammedchboubaig@gmail.com";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "responsable@tondomaine.ma";
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isDone, setIsDone] = useState(false);
-  const [serverError, setServerError] = useState(null);
+sgMail.setApiKey(SENDGRID_API_KEY);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((s) => ({ ...s, [name]: value }));
-  };
+app.use(
+  rateLimit({
+    windowMs: 60_000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (isSubmitting || isDone) return; // safety
+const reservationValidators = [
+  body("prenom").trim().isLength({ min: 1 }),
+  body("nom").trim().isLength({ min: 1 }),
+  body("personnes").isInt({ min: 1 }),
+  body("email").isEmail(),
+  body("telephone").trim().isLength({ min: 6 }),
+  body("date").isISO8601(),
+  body("message").optional().trim(),
+];
 
-    setIsSubmitting(true);
-    setServerError(null);
+app.post("/api/reservation", reservationValidators, async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ error: "Validation failed", details: errors.array() });
 
-    const payload = {
-      prenom: formData.firstName,
-      nom: formData.lastName,
-      personnes: formData.people,
-      email: formData.email,
-      telephone: formData.phone,
-      date: formData.date,
-      message: formData.message,
-    };
+  const { prenom, nom, personnes, email, telephone, date, message } = req.body;
 
-    // generate Idempotency-Key: use crypto.randomUUID when available
-    const idemKey =
-      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+  const adminHtml = `
+    <h2>Nouvelle demande de réservation</h2>
+    <p><strong>Nom:</strong> ${prenom} ${nom}</p>
+    <p><strong>Email:</strong> ${email}</p>
+    <p><strong>Téléphone:</strong> ${telephone}</p>
+    <p><strong>Nombre de personnes:</strong> ${personnes}</p>
+    <p><strong>Date souhaitée:</strong> ${date}</p>
+    <p><strong>Message:</strong> ${message || "—"}</p>
+  `;
 
-    try {
-      const res = await fetch("https://baytalkhoyoul.onrender.com/api/reservation", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": idemKey,
-        },
-        body: JSON.stringify(payload),
-      });
+  const clientHtml = `
+    <h2>Bonjour ${prenom},</h2>
+    <p>Votre demande de réservation a bien été enregistrée.</p>
+    <p>Un membre de notre équipe vous contactera bientôt.</p>
+    <p>Merci pour votre confiance 🤎</p>
+    <br />
+    <p>— L'équipe Bayt Al Khouyoul</p>
+  `;
 
-      if (res.ok) {
-        setIsDone(true);
-        setIsSubmitting(false);
+  try {
+    await sgMail.send({
+      to: ADMIN_EMAIL,
+      from: SENDGRID_FROM,
+      subject: `🧾 Nouvelle réservation - ${prenom} ${nom}`,
+      html: adminHtml,
+    });
 
-        // clear form (optional UX choice)
-        setFormData({
-          firstName: "",
-          lastName: "",
-          people: 1,
-          email: "",
-          phone: "",
-          date: "",
-          message: "",
-        });
-      } else {
-        // try to extract server message
-        const err = await res.json().catch(() => ({}));
-        const msg = err.error || err.message || "Server error, please try again later.";
-        setServerError(msg);
-        setIsSubmitting(false);
-        // small visible notification
-        alert(msg);
-      }
-    } catch (error) {
-      console.error("Network error:", error);
-      setServerError("Network error. Please check your connection.");
-      setIsSubmitting(false);
-      alert("Network error. Please check your connection.");
-    }
-  };
+    await sgMail.send({
+      to: email,
+      from: SENDGRID_FROM,
+      subject: "Votre réservation a bien été reçue ✅",
+      html: clientHtml,
+    });
 
-  return (
-    <div className="reserver-page">
-      <h1>Book a Ride</h1>
-      <p>
-        Fill out the form below to book your horse riding experience.
-        You will receive a confirmation email shortly.
-      </p>
+    return res.status(200).json({ message: "Emails envoyés via SendGrid" });
+  } catch (err) {
+    console.error("SendGrid error:", err?.response?.body || err);
+    return res.status(500).json({ error: "Error sending emails" });
+  }
+});
 
-      <form
-        className={`reservation-form ${isDone ? "disabled" : ""}`}
-        onSubmit={handleSubmit}
-        aria-disabled={isSubmitting || isDone}
-      >
-        <div className="form-row">
-          <div className="form-group">
-            <label htmlFor="firstName">First Name *</label>
-            <input
-              id="firstName"
-              name="firstName"
-              type="text"
-              value={formData.firstName}
-              onChange={handleChange}
-              required
-              disabled={isSubmitting || isDone}
-            />
-          </div>
+app.get("/", (req, res) => res.send("✅ Serveur Bayt Al Khouyoul (SendGrid) fonctionne !"));
 
-          <div className="form-group">
-            <label htmlFor="lastName">Last Name *</label>
-            <input
-              id="lastName"
-              name="lastName"
-              type="text"
-              value={formData.lastName}
-              onChange={handleChange}
-              required
-              disabled={isSubmitting || isDone}
-            />
-          </div>
-        </div>
-
-        <div className="form-row">
-          <div className="form-group">
-            <label htmlFor="people">Number of People *</label>
-            <input
-              id="people"
-              name="people"
-              type="number"
-              min="1"
-              value={formData.people}
-              onChange={handleChange}
-              required
-              disabled={isSubmitting || isDone}
-            />
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="date">Date *</label>
-            <input
-              id="date"
-              name="date"
-              type="date"
-              value={formData.date}
-              onChange={handleChange}
-              required
-              disabled={isSubmitting || isDone}
-            />
-          </div>
-        </div>
-
-        <div className="form-row">
-          <div className="form-group">
-            <label htmlFor="email">Email *</label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              value={formData.email}
-              onChange={handleChange}
-              required
-              disabled={isSubmitting || isDone}
-            />
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="phone">Phone *</label>
-            <input
-              id="phone"
-              name="phone"
-              type="tel"
-              value={formData.phone}
-              onChange={handleChange}
-              required
-              disabled={isSubmitting || isDone}
-            />
-          </div>
-        </div>
-
-        <div className="form-group full">
-          <label htmlFor="message">Message (optional)</label>
-          <textarea
-            id="message"
-            name="message"
-            value={formData.message}
-            onChange={handleChange}
-            placeholder="Example: I prefer a ride by the beach..."
-            disabled={isSubmitting || isDone}
-          />
-        </div>
-
-        <button
-          type="submit"
-          className="btn-submit"
-          disabled={isSubmitting || isDone}
-          aria-live="polite"
-        >
-          {isSubmitting ? "Sending..." : isDone ? "Request Sent" : "Send Request"}
-        </button>
-      </form>
-
-      {/* Transparent overlay (no animation) */}
-      {(isSubmitting || isDone) && (
-        <div className={`overlay ${isDone ? "done" : ""}`} role="status" aria-live="polite">
-          <div className="overlay-card">
-            <div className="overlay-text">
-              {isSubmitting && (
-                <>
-                  <h2>Bayt Al Khouyoul thanks you</h2>
-                  <p>We welcome you! Please wait a moment…</p>
-                </>
-              )}
-
-              {isDone && (
-                <>
-                  <h2>Reservation Sent</h2>
-                  <p>Thank you! We will contact you shortly.</p>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {serverError && (
-        <div className="server-error" role="alert" style={{ marginTop: 12 }}>
-          {serverError}
-        </div>
-      )}
-    </div>
-  );
-}
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`🚀 Serveur actif sur http://localhost:${PORT}`));
