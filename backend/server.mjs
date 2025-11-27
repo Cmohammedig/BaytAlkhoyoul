@@ -1,70 +1,247 @@
-import express from "express";
-import cors from "cors";
-import nodemailer from "nodemailer";
+// Reservation.jsx
+import React, { useState } from "react";
+import "./reservation.css";
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+/**
+ * Reservation component (complete)
+ * - Transparent overlay (Bayt Al Khouyoul message)
+ * - Prevent double submit + Idempotency-Key header
+ * - Accessible labels and aria-live
+ * - Uses your API endpoint at https://baytalkhoyoul.onrender.com/api/reservation
+ */
 
-// === CONFIG TRANSPORT EMAIL ===
-// ⚠️ يفضّل تدير هاد المعلومات فـ .env (باش تكون آمنة)
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: "mohammedchboubaig@gmail.com", // بريد المسؤول
-    pass: "xjdh wugf xmsa huvf", // App password Gmail
-  },
-});
+export default function Reservation() {
+  const [formData, setFormData] = useState({
+    firstName: "",
+    lastName: "",
+    people: 1,
+    email: "",
+    phone: "",
+    date: "",
+    message: "",
+  });
 
-// === Route POST pour recevoir les réservations ===
-app.post("/api/reservation", async (req, res) => {
-  const { prenom, nom, personnes, email, telephone, date, message } = req.body;
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDone, setIsDone] = useState(false);
+  const [serverError, setServerError] = useState(null);
 
-  try {
-    // Email vers l'administrateur
-    await transporter.sendMail({
-      from: `"Site Bayt Al Khouyoul" <${email}>`,
-      to: "responsable@tondomaine.ma", // 📩 بريد الشخص المسؤول
-      subject: `🧾 Nouvelle réservation - ${prenom} ${nom}`,
-      html: `
-        <h2>Nouvelle demande de réservation</h2>
-        <p><strong>Nom:</strong> ${prenom} ${nom}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Téléphone:</strong> ${telephone}</p>
-        <p><strong>Nombre de personnes:</strong> ${personnes}</p>
-        <p><strong>Date souhaitée:</strong> ${date}</p>
-        <p><strong>Message:</strong> ${message || "—"}</p>
-      `,
-    });
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((s) => ({ ...s, [name]: value }));
+  };
 
-    // Email de confirmation au client
-    await transporter.sendMail({
-      from: `"Bayt Al Khouyoul" <mohammedchboubaig@gmail.com>`,
-      to: email,
-      subject: "Votre réservation a bien été reçue ✅",
-      html: `
-        <h2>Bonjour ${prenom},</h2>
-        <p>Votre demande de réservation a bien été enregistrée.</p>
-        <p>Un membre de notre équipe vous contactera bientôt.</p>
-        <p>Merci pour votre confiance 🤎</p>
-        <br/>
-        <p>– L'équipe Bayt Al Khouyoul</p>
-      `,
-    });
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (isSubmitting || isDone) return; // safety
 
-    res.status(200).json({ message: "Emails envoyés avec succès" });
-  } catch (err) {
-    console.error("Erreur envoi email:", err);
-    res.status(500).json({ error: "Erreur serveur" });
-  }
-});
+    setIsSubmitting(true);
+    setServerError(null);
 
-// === Route GET principale pour tester ===
-app.get("/", (req, res) => {
-  res.send("✅ Le serveur Bayt Al Khouyoul fonctionne parfaitement !");
-});
+    const payload = {
+      prenom: formData.firstName,
+      nom: formData.lastName,
+      personnes: formData.people,
+      email: formData.email,
+      telephone: formData.phone,
+      date: formData.date,
+      message: formData.message,
+    };
 
-// === Lancer le serveur ===
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Serveur actif sur port ${PORT}`));
+    // generate Idempotency-Key: use crypto.randomUUID when available
+    const idemKey =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 
+    try {
+      const res = await fetch("https://baytalkhoyoul.onrender.com/api/reservation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idemKey,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        setIsDone(true);
+        setIsSubmitting(false);
+
+        // clear form (optional UX choice)
+        setFormData({
+          firstName: "",
+          lastName: "",
+          people: 1,
+          email: "",
+          phone: "",
+          date: "",
+          message: "",
+        });
+      } else {
+        // try to extract server message
+        const err = await res.json().catch(() => ({}));
+        const msg = err.error || err.message || "Server error, please try again later.";
+        setServerError(msg);
+        setIsSubmitting(false);
+        // small visible notification
+        alert(msg);
+      }
+    } catch (error) {
+      console.error("Network error:", error);
+      setServerError("Network error. Please check your connection.");
+      setIsSubmitting(false);
+      alert("Network error. Please check your connection.");
+    }
+  };
+
+  return (
+    <div className="reserver-page">
+      <h1>Book a Ride</h1>
+      <p>
+        Fill out the form below to book your horse riding experience.
+        You will receive a confirmation email shortly.
+      </p>
+
+      <form
+        className={`reservation-form ${isDone ? "disabled" : ""}`}
+        onSubmit={handleSubmit}
+        aria-disabled={isSubmitting || isDone}
+      >
+        <div className="form-row">
+          <div className="form-group">
+            <label htmlFor="firstName">First Name *</label>
+            <input
+              id="firstName"
+              name="firstName"
+              type="text"
+              value={formData.firstName}
+              onChange={handleChange}
+              required
+              disabled={isSubmitting || isDone}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="lastName">Last Name *</label>
+            <input
+              id="lastName"
+              name="lastName"
+              type="text"
+              value={formData.lastName}
+              onChange={handleChange}
+              required
+              disabled={isSubmitting || isDone}
+            />
+          </div>
+        </div>
+
+        <div className="form-row">
+          <div className="form-group">
+            <label htmlFor="people">Number of People *</label>
+            <input
+              id="people"
+              name="people"
+              type="number"
+              min="1"
+              value={formData.people}
+              onChange={handleChange}
+              required
+              disabled={isSubmitting || isDone}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="date">Date *</label>
+            <input
+              id="date"
+              name="date"
+              type="date"
+              value={formData.date}
+              onChange={handleChange}
+              required
+              disabled={isSubmitting || isDone}
+            />
+          </div>
+        </div>
+
+        <div className="form-row">
+          <div className="form-group">
+            <label htmlFor="email">Email *</label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={handleChange}
+              required
+              disabled={isSubmitting || isDone}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="phone">Phone *</label>
+            <input
+              id="phone"
+              name="phone"
+              type="tel"
+              value={formData.phone}
+              onChange={handleChange}
+              required
+              disabled={isSubmitting || isDone}
+            />
+          </div>
+        </div>
+
+        <div className="form-group full">
+          <label htmlFor="message">Message (optional)</label>
+          <textarea
+            id="message"
+            name="message"
+            value={formData.message}
+            onChange={handleChange}
+            placeholder="Example: I prefer a ride by the beach..."
+            disabled={isSubmitting || isDone}
+          />
+        </div>
+
+        <button
+          type="submit"
+          className="btn-submit"
+          disabled={isSubmitting || isDone}
+          aria-live="polite"
+        >
+          {isSubmitting ? "Sending..." : isDone ? "Request Sent" : "Send Request"}
+        </button>
+      </form>
+
+      {/* Transparent overlay (no animation) */}
+      {(isSubmitting || isDone) && (
+        <div className={`overlay ${isDone ? "done" : ""}`} role="status" aria-live="polite">
+          <div className="overlay-card">
+            <div className="overlay-text">
+              {isSubmitting && (
+                <>
+                  <h2>Bayt Al Khouyoul thanks you</h2>
+                  <p>We welcome you! Please wait a moment…</p>
+                </>
+              )}
+
+              {isDone && (
+                <>
+                  <h2>Reservation Sent</h2>
+                  <p>Thank you! We will contact you shortly.</p>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {serverError && (
+        <div className="server-error" role="alert" style={{ marginTop: 12 }}>
+          {serverError}
+        </div>
+      )}
+    </div>
+  );
+}
